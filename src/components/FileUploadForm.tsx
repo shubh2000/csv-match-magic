@@ -10,10 +10,12 @@ interface FileUploadFormProps {
     headers: string[];
     data: string[][];
     fileName: string;
+    headerRowIndex: number;
   }, targetFile: {
     headers: string[];
     data: string[][];
     fileName: string;
+    headerRowIndex: number;
   }) => void;
 }
 
@@ -54,6 +56,10 @@ const FileUploadForm = ({ onFilesUploaded }: FileUploadFormProps) => {
       if (sourceData.headers.length === 0 || targetData.headers.length === 0) {
         toast.error('One or both files do not contain valid CSV headers');
         return;
+      }
+      
+      if (sourceData.headerRowIndex > 0 || targetData.headerRowIndex > 0) {
+        toast.info(`Detected header rows at lines ${sourceData.headerRowIndex + 1} and ${targetData.headerRowIndex + 1}`);
       }
       
       onFilesUploaded(

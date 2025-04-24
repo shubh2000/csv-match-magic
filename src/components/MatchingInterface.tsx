@@ -18,18 +18,20 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { KeySquare } from "lucide-react";
+import { KeySquare, Info } from "lucide-react";
 
 interface MatchingInterfaceProps {
   sourceData: {
     headers: string[];
     data: string[][];
     fileName: string;
+    headerRowIndex: number;
   };
   targetData: {
     headers: string[];
     data: string[][];
     fileName: string;
+    headerRowIndex: number;
   };
   onReset: () => void;
 }
@@ -136,7 +138,9 @@ const MatchingInterface = ({
           source: selectedUniqueKeyMatch.sourceHeader,
           target: selectedUniqueKeyMatch.targetHeader,
           confidence: selectedUniqueKeyMatch.confidence
-        } : null
+        } : null,
+        sourceHeaderRow: sourceData.headerRowIndex,
+        targetHeaderRow: targetData.headerRowIndex
       }
     };
     
@@ -188,6 +192,24 @@ const MatchingInterface = ({
             Start Over
           </Button>
         </div>
+
+        {/* CSV Structure Information */}
+        {(sourceData.headerRowIndex > 0 || targetData.headerRowIndex > 0) && (
+          <div className="mb-6 p-4 border rounded-md bg-amber-50">
+            <div className="flex items-center gap-2 text-amber-800">
+              <Info size={16} />
+              <p className="text-sm">
+                Multiple tables detected in CSV file(s). Headers found at:
+                {sourceData.headerRowIndex > 0 && (
+                  <span className="font-medium"> Source: row {sourceData.headerRowIndex + 1}</span>
+                )}
+                {targetData.headerRowIndex > 0 && (
+                  <span className="font-medium"> Target: row {targetData.headerRowIndex + 1}</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* Threshold Control */}

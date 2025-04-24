@@ -10,11 +10,13 @@ const Index = () => {
     headers: string[];
     data: string[][];
     fileName: string;
+    headerRowIndex: number;
   } | null>(null);
   const [targetData, setTargetData] = useState<{
     headers: string[];
     data: string[][];
     fileName: string;
+    headerRowIndex: number;
   } | null>(null);
 
   const handleFilesUploaded = (
@@ -22,11 +24,13 @@ const Index = () => {
       headers: string[];
       data: string[][];
       fileName: string;
+      headerRowIndex: number;
     },
     targetFile: {
       headers: string[];
       data: string[][];
       fileName: string;
+      headerRowIndex: number;
     }
   ) => {
     setSourceData(sourceFile);
