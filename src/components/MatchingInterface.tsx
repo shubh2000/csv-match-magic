@@ -7,7 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
 import HeaderRow from './HeaderRow';
-import { generateHeaderMapping, createMappingResult } from '@/utils/matchingUtils';
+import { 
+  generateHeaderMapping, 
+  createMappingResult, 
+  findMatchingUniqueKeys 
+} from '@/utils/matchingUtils';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
+import { KeySquare } from "lucide-react";
 
 interface MatchingInterfaceProps {
   sourceData: {
@@ -21,6 +32,13 @@ interface MatchingInterfaceProps {
     fileName: string;
   };
   onReset: () => void;
+}
+
+interface UniqueKeyMatch {
+  sourceHeader: string;
+  targetHeader: string;
+  confidence: number;
+  matchingValues: number;
 }
 
 const MatchingInterface = ({
@@ -37,11 +55,32 @@ const MatchingInterface = ({
   }>>([]);
   const [jsonOutput, setJsonOutput] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>("mapping");
+  const [uniqueKeyMatches, setUniqueKeyMatches] = useState<UniqueKeyMatch[]>([]);
+  const [selectedUniqueKeyMatch, setSelectedUniqueKeyMatch] = useState<UniqueKeyMatch | null>(null);
 
-  // Initialize mapping when component mounts
+  // Initialize mapping and detect unique keys when component mounts
   useEffect(() => {
+    detectUniqueKeys();
     updateMapping(thresholdValue, maxSuggestions);
   }, [sourceData, targetData]);
+
+  // Detect potential unique key matches between the two files
+  const detectUniqueKeys = () => {
+    const keyMatches = findMatchingUniqueKeys(
+      sourceData.headers,
+      sourceData.data,
+      targetData.headers,
+      targetData.data
+    );
+
+    setUniqueKeyMatches(keyMatches);
+    
+    // Auto-select the highest confidence match if available
+    if (keyMatches.length > 0) {
+      setSelectedUniqueKeyMatch(keyMatches[0]);
+      toast.success(`Found potential unique key match: ${keyMatches[0].sourceHeader} → ${keyMatches[0].targetHeader} (${keyMatches[0].confidence}% confident)`);
+    }
+  };
 
   // Update mapping when threshold or max suggestions change
   const updateMapping = (threshold: number, max: number) => {
@@ -73,9 +112,35 @@ const MatchingInterface = ({
     setMapping(updatedMapping);
   };
 
+  const selectUniqueKeyMatch = (match: UniqueKeyMatch) => {
+    setSelectedUniqueKeyMatch(match);
+    toast.info(`Selected unique key match: ${match.sourceHeader} → ${match.targetHeader}`);
+    
+    // Update the mapping to reflect this unique key match
+    const updatedMapping = [...mapping];
+    const sourceHeaderIndex = sourceData.headers.indexOf(match.sourceHeader);
+    if (sourceHeaderIndex !== -1 && sourceHeaderIndex < updatedMapping.length) {
+      updatedMapping[sourceHeaderIndex].selectedMatch = match.targetHeader;
+      setMapping(updatedMapping);
+    }
+  };
+
   const generateOutput = () => {
     const result = createMappingResult(mapping);
-    setJsonOutput(JSON.stringify(result, null, 2));
+    
+    // Add unique key information to the output
+    const outputWithMetadata = {
+      mapping: result,
+      metadata: {
+        uniqueKey: selectedUniqueKeyMatch ? {
+          source: selectedUniqueKeyMatch.sourceHeader,
+          target: selectedUniqueKeyMatch.targetHeader,
+          confidence: selectedUniqueKeyMatch.confidence
+        } : null
+      }
+    };
+    
+    setJsonOutput(JSON.stringify(outputWithMetadata, null, 2));
     setActiveTab("output");
     toast.success("Mapping generated successfully!");
   };
@@ -96,6 +161,17 @@ const MatchingInterface = ({
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success("JSON file downloaded!");
+  };
+
+  const isUniqueKey = (header: string): boolean => {
+    return selectedUniqueKeyMatch?.sourceHeader === header;
+  };
+
+  const getPotentialMatchForHeader = (header: string): string | undefined => {
+    if (isUniqueKey(header) && selectedUniqueKeyMatch) {
+      return selectedUniqueKeyMatch.targetHeader;
+    }
+    return undefined;
   };
 
   return (
@@ -153,6 +229,46 @@ const MatchingInterface = ({
           </div>
         </div>
 
+        {/* Unique Key Match Section */}
+        {uniqueKeyMatches.length > 0 && (
+          <div className="mb-6 p-4 border rounded-md bg-blue-50">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <h3 className="font-medium flex items-center">
+                  <KeySquare className="h-4 w-4 mr-1" /> Potential Unique Key Matches
+                </h3>
+                {selectedUniqueKeyMatch && (
+                  <p className="text-sm mt-1">
+                    Selected: <strong>{selectedUniqueKeyMatch.sourceHeader}</strong> → <strong>{selectedUniqueKeyMatch.targetHeader}</strong> 
+                    <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                      {selectedUniqueKeyMatch.confidence}% confident
+                    </span>
+                  </p>
+                )}
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="whitespace-nowrap">
+                    <KeySquare className="h-4 w-4 mr-1" /> Choose Key Match
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {uniqueKeyMatches.map((match, index) => (
+                    <DropdownMenuItem 
+                      key={index} 
+                      onClick={() => selectUniqueKeyMatch(match)}
+                      className={selectedUniqueKeyMatch?.sourceHeader === match.sourceHeader && 
+                                selectedUniqueKeyMatch?.targetHeader === match.targetHeader ? "bg-blue-50" : ""}
+                    >
+                      {match.sourceHeader} → {match.targetHeader} ({match.confidence}%)
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full grid grid-cols-2">
             <TabsTrigger value="mapping">Header Mapping</TabsTrigger>
@@ -178,6 +294,8 @@ const MatchingInterface = ({
                   targetHeaders={targetData.headers}
                   selectedMatch={item.selectedMatch}
                   onMatchSelected={(match) => handleMatchSelected(index, match)}
+                  isUniqueKey={isUniqueKey(item.sourceHeader)}
+                  potentialUniqueKeyMatch={getPotentialMatchForHeader(item.sourceHeader)}
                 />
               ))}
             </div>

@@ -88,3 +88,91 @@ export const createMappingResult = (
     };
   }, {});
 };
+
+// Check if a column could be a unique identifier by scanning data
+export const detectPotentialUniqueKeys = (
+  headers: string[], 
+  data: string[][]
+): string[] => {
+  // Filter out columns that have empty values or duplicates
+  const uniqueKeys: string[] = [];
+  
+  headers.forEach((header, index) => {
+    // Extract all values for this column
+    const columnValues = data.map(row => row[index]);
+    
+    // Check if all values are present and unique
+    const hasEmptyValues = columnValues.some(value => !value || value.trim() === '');
+    if (hasEmptyValues) return;
+    
+    // Check for duplicates
+    const uniqueValues = new Set(columnValues);
+    if (uniqueValues.size === columnValues.length) {
+      uniqueKeys.push(header);
+    }
+  });
+
+  return uniqueKeys;
+};
+
+// Find the best match for a unique key between two files
+export const findMatchingUniqueKeys = (
+  sourceHeaders: string[],
+  sourceData: string[][],
+  targetHeaders: string[],
+  targetData: string[][]
+): Array<{
+  sourceHeader: string;
+  targetHeader: string;
+  confidence: number;
+  matchingValues: number;
+}> => {
+  // First, detect potential unique keys in both files
+  const sourceUniqueKeys = detectPotentialUniqueKeys(sourceHeaders, sourceData);
+  const targetUniqueKeys = detectPotentialUniqueKeys(targetHeaders, targetData);
+  
+  if (sourceUniqueKeys.length === 0 || targetUniqueKeys.length === 0) {
+    return [];
+  }
+  
+  const matches: Array<{
+    sourceHeader: string;
+    targetHeader: string;
+    confidence: number;
+    matchingValues: number;
+  }> = [];
+  
+  // For each potential source key, check against all target keys
+  sourceUniqueKeys.forEach(sourceKey => {
+    const sourceKeyIndex = sourceHeaders.indexOf(sourceKey);
+    const sourceValues = sourceData.map(row => row[sourceKeyIndex]);
+    
+    targetUniqueKeys.forEach(targetKey => {
+      const targetKeyIndex = targetHeaders.indexOf(targetKey);
+      const targetValues = targetData.map(row => row[targetKeyIndex]);
+      
+      // Count matching values
+      const matchingValueCount = sourceValues.filter(value => 
+        targetValues.includes(value)
+      ).length;
+      
+      // Calculate confidence based on matching percentage and name similarity
+      const valueMatchPercentage = matchingValueCount / sourceValues.length * 100;
+      const nameSimilarity = calculateSimilarity(sourceKey, targetKey);
+      
+      // Combined confidence (weighted average)
+      const confidence = (valueMatchPercentage * 0.7) + (nameSimilarity * 0.3);
+      
+      matches.push({
+        sourceHeader: sourceKey,
+        targetHeader: targetKey,
+        confidence: Math.round(confidence),
+        matchingValues: matchingValueCount
+      });
+    });
+  });
+  
+  // Sort by confidence (descending)
+  return matches.sort((a, b) => b.confidence - a.confidence);
+};
+

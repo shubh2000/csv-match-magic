@@ -18,10 +18,10 @@ export const parseCSVFile = async (file: File): Promise<{
       // Extract headers from the first line
       const headers = lines[0].split(",").map(header => header.trim());
       
-      // Extract data (limit to 5 rows for preview)
-      const data = lines.slice(1, 6).map(line => 
+      // Extract all data for analysis (up to 100 rows)
+      const data = lines.slice(1, Math.min(lines.length, 101)).map(line => 
         line.split(",").map(cell => cell.trim())
-      );
+      ).filter(row => row.length === headers.length); // Ensure complete rows
       
       resolve({ headers, data });
     };
@@ -44,3 +44,4 @@ export const createCSVBlob = (headers: string[], data: string[][]): Blob => {
   
   return new Blob([csvContent], { type: "text/csv" });
 };
+
