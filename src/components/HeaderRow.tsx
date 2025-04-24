@@ -15,8 +15,8 @@ interface HeaderRowProps {
   targetHeaders: string[];
   selectedMatch: string | null;
   onMatchSelected: (match: string | null) => void;
-  isUniqueKey?: boolean; // New prop to indicate if this is a unique key
-  potentialUniqueKeyMatch?: string; // Potential unique key match
+  isUniqueKey?: boolean;
+  potentialUniqueKeyMatch?: string;
 }
 
 const HeaderRow = ({
@@ -82,14 +82,14 @@ const HeaderRow = ({
         {/* Select dropdown */}
         <div className="md:w-1/3">
           <Select
-            value={selectedMatch || "not_mapped"}
-            onValueChange={(value) => onMatchSelected(value === "not_mapped" ? null : value)}
+            value={selectedMatch || "NOT_MAPPED"}
+            onValueChange={(value) => onMatchSelected(value === "NOT_MAPPED" ? null : value)}
           >
             <SelectTrigger className={isUniqueKey ? "border-blue-300" : ""}>
               <SelectValue placeholder="Select target column" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="not_mapped">--Not Mapped--</SelectItem>
+              <SelectItem value="NOT_MAPPED">--Not Mapped--</SelectItem>
               {targetHeaders.map((header) => (
                 <SelectItem key={header} value={header}>
                   {header}
@@ -105,3 +105,4 @@ const HeaderRow = ({
 };
 
 export default HeaderRow;
+
