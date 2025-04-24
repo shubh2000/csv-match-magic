@@ -65,14 +65,14 @@ const HeaderRow = ({
         {/* Select dropdown */}
         <div className="md:w-1/3">
           <Select
-            value={selectedMatch || ""}
-            onValueChange={(value) => onMatchSelected(value || null)}
+            value={selectedMatch || "not_mapped"}
+            onValueChange={(value) => onMatchSelected(value === "not_mapped" ? null : value)}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select target column" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">--Not Mapped--</SelectItem>
+              <SelectItem value="not_mapped">--Not Mapped--</SelectItem>
               {targetHeaders.map((header) => (
                 <SelectItem key={header} value={header}>
                   {header}
