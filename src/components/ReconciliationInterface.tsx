@@ -8,6 +8,14 @@ import { ChartContainer } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 interface ReconciliationInterfaceProps {
   sourceData: {
@@ -47,11 +55,13 @@ interface ReconciliationResult {
     targetValue: number | string;
     difference: number | null;
     key: string;
+    status: 'matched' | 'value_mismatch';
   }>;
   unmatched: Array<{
     type: 'source' | 'target';
     row: Record<string, string>;
     key: string;
+    reason: string;
   }>;
   summary: {
     totalTransactions: number;
@@ -61,6 +71,8 @@ interface ReconciliationResult {
     totalSourceValue: number;
     totalTargetValue: number;
     totalDifference: number;
+    perfectMatches: number;
+    valueMismatches: number;
   };
 }
 
@@ -124,12 +136,14 @@ const ReconciliationInterface = ({
         );
         
         const matched: ReconciliationResult['matched'] = [];
-        const unmatchedSource: Array<{ type: 'source'; row: Record<string, string>; key: string }> = [];
-        const unmatchedTarget: Array<{ type: 'target'; row: Record<string, string>; key: string }> = [];
+        const unmatchedSource: Array<{ type: 'source'; row: Record<string, string>; key: string; reason: string }> = [];
+        const unmatchedTarget: Array<{ type: 'target'; row: Record<string, string>; key: string; reason: string }> = [];
         
         let totalSourceValue = 0;
         let totalTargetValue = 0;
         let totalDifference = 0;
+        let perfectMatches = 0;
+        let valueMismatches = 0;
         
         // Process target rows and find matches
         targetData.data.forEach(row => {
@@ -162,11 +176,28 @@ const ReconciliationInterface = ({
             
             // Calculate difference if numeric
             let difference = null;
+            let status: 'matched' | 'value_mismatch' = 'matched';
+            
             if (typeof sourceItem.value === 'number' && typeof targetValue === 'number') {
               difference = sourceItem.value - targetValue;
               totalSourceValue += sourceItem.value;
               totalTargetValue += targetValue;
               totalDifference += difference;
+              
+              // Check if values match exactly or have a difference
+              if (Math.abs(difference) < 0.001) { // Using small epsilon for floating-point comparison
+                difference = 0;
+                perfectMatches++;
+              } else {
+                status = 'value_mismatch';
+                valueMismatches++;
+              }
+            } else if (sourceItem.value !== targetValue) {
+              // Non-numeric values that don't match
+              status = 'value_mismatch';
+              valueMismatches++;
+            } else {
+              perfectMatches++;
             }
             
             matched.push({
@@ -175,14 +206,16 @@ const ReconciliationInterface = ({
               sourceValue: sourceItem.value,
               targetValue,
               difference,
-              key: keyValue
+              key: keyValue,
+              status
             });
           } else {
             // Target row has no matching source
             unmatchedTarget.push({ 
               type: 'target', 
               row: rowObj,
-              key: keyValue 
+              key: keyValue,
+              reason: `No matching transaction with ID '${keyValue}' found in source data`
             });
           }
         });
@@ -192,7 +225,8 @@ const ReconciliationInterface = ({
           unmatchedSource.push({ 
             type: 'source', 
             row: value.row,
-            key 
+            key,
+            reason: `No matching transaction with ID '${key}' found in target data`
           });
           
           if (typeof value.value === 'number') {
@@ -221,7 +255,9 @@ const ReconciliationInterface = ({
             matchPercentage,
             totalSourceValue,
             totalTargetValue,
-            totalDifference
+            totalDifference,
+            perfectMatches,
+            valueMismatches
           }
         });
         
@@ -241,7 +277,8 @@ const ReconciliationInterface = ({
     const { summary } = result;
     
     const matchData = [
-      { name: 'Matched', value: summary.matchedTransactions },
+      { name: 'Perfect Match', value: summary.perfectMatches },
+      { name: 'Value Mismatch', value: summary.valueMismatches },
       { name: 'Unmatched', value: summary.unmatchedTransactions },
     ];
     
@@ -313,28 +350,35 @@ const ReconciliationInterface = ({
     
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
+        <Card className="overflow-hidden">
+          <CardContent className="p-4 relative">
             <div className="text-2xl font-bold">{summary.totalTransactions}</div>
             <p className="text-xs text-muted-foreground">Total Transactions</p>
+            <div className="absolute inset-0 bg-blue-500/5 pointer-events-none" />
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold text-green-600">{summary.matchedTransactions}</div>
-            <p className="text-xs text-muted-foreground">Matched Transactions</p>
+        
+        <Card className="overflow-hidden">
+          <CardContent className="p-4 relative">
+            <div className="text-2xl font-bold text-green-600">{summary.perfectMatches}</div>
+            <p className="text-xs text-muted-foreground">Perfect Matches</p>
+            <div className="absolute inset-0 bg-green-500/5 pointer-events-none" />
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
+        
+        <Card className="overflow-hidden">
+          <CardContent className="p-4 relative">
+            <div className="text-2xl font-bold text-amber-600">{summary.valueMismatches}</div>
+            <p className="text-xs text-muted-foreground">Value Mismatches</p>
+            <div className="absolute inset-0 bg-amber-500/5 pointer-events-none" />
+          </CardContent>
+        </Card>
+        
+        <Card className="overflow-hidden">
+          <CardContent className="p-4 relative">
             <div className="text-2xl font-bold text-red-600">{summary.unmatchedTransactions}</div>
             <p className="text-xs text-muted-foreground">Unmatched Transactions</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold">{summary.matchPercentage}%</div>
-            <p className="text-xs text-muted-foreground">Match Rate</p>
+            <div className="absolute inset-0 bg-red-500/5 pointer-events-none" />
           </CardContent>
         </Card>
         
@@ -344,6 +388,7 @@ const ReconciliationInterface = ({
             <p className="text-xs text-muted-foreground">Total Source Value</p>
           </CardContent>
         </Card>
+        
         <Card className="col-span-2">
           <CardContent className="p-4">
             <div className="text-xl font-bold">{summary.totalTargetValue.toFixed(2)}</div>
@@ -354,70 +399,100 @@ const ReconciliationInterface = ({
     );
   };
   
-  const renderDataTable = (data: Array<any>, type: 'matched' | 'unmatched') => {
-    if (!data.length) return <p className="text-center py-4">No {type} transactions found</p>;
+  const renderMatchedDataTable = () => {
+    if (!result || !result.matched.length) {
+      return <p className="text-center py-4">No matched transactions found</p>;
+    }
     
-    // Define columns based on type
-    let columns: string[] = [];
-    if (type === 'matched') {
-      columns = [
-        uniqueKeyMapping.sourceKey,
-        ...reconciliationColumns.sourceColumns,
-        ...reconciliationColumns.targetColumns,
-        'Difference'
-      ];
-    } else {
-      columns = type === 'unmatched' 
-        ? ['Source/Target', uniqueKeyMapping.sourceKey || uniqueKeyMapping.targetKey]
-        : [uniqueKeyMapping.sourceKey];
+    // Get all matched transactions
+    const { matched } = result;
+    const hasDifferences = matched.some(item => item.status === 'value_mismatch');
+    
+    return (
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead>Transaction ID</TableHead>
+              {reconciliationColumns.sourceColumns.map(col => (
+                <TableHead key={`source-${col}`}>Source: {col}</TableHead>
+              ))}
+              {reconciliationColumns.targetColumns.map(col => (
+                <TableHead key={`target-${col}`}>Target: {col}</TableHead>
+              ))}
+              {hasDifferences && (
+                <TableHead>Status</TableHead>
+              )}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {matched.map((item, idx) => (
+              <TableRow key={idx} className={
+                item.status === 'value_mismatch' 
+                  ? 'bg-amber-50 hover:bg-amber-100/80' 
+                  : 'hover:bg-muted/50'
+              }>
+                <TableCell className="font-medium">{item.key}</TableCell>
+                {reconciliationColumns.sourceColumns.map(col => (
+                  <TableCell key={col}>{item.sourceRow[col]}</TableCell>
+                ))}
+                {reconciliationColumns.targetColumns.map(col => (
+                  <TableCell key={col}>{item.targetRow[col]}</TableCell>
+                ))}
+                {hasDifferences && (
+                  <TableCell>
+                    {item.status === 'value_mismatch' ? (
+                      <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                        Value mismatch
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        Perfect match
+                      </Badge>
+                    )}
+                  </TableCell>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  };
+  
+  const renderUnmatchedDataTable = () => {
+    if (!result || !result.unmatched.length) {
+      return <p className="text-center py-4">No unmatched transactions found</p>;
     }
     
     return (
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-muted">
-              {columns.map(column => (
-                <th key={column} className="p-2 text-left text-xs font-medium text-muted-foreground">
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((item, idx) => (
-              <tr key={idx} className="border-b hover:bg-muted/50">
-                {type === 'matched' ? (
-                  <>
-                    <td className="p-2 text-sm">{item.key}</td>
-                    {reconciliationColumns.sourceColumns.map(col => (
-                      <td key={col} className="p-2 text-sm">{item.sourceRow[col]}</td>
-                    ))}
-                    {reconciliationColumns.targetColumns.map(col => (
-                      <td key={col} className="p-2 text-sm">{item.targetRow[col]}</td>
-                    ))}
-                    <td className="p-2 text-sm">
-                      {item.difference !== null ? (
-                        <span className={item.difference === 0 ? 'text-green-600' : 'text-red-600'}>
-                          {item.difference.toFixed(2)}
-                        </span>
-                      ) : 'N/A'}
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td className="p-2 text-sm">
-                      <Badge variant={item.type === 'source' ? 'outline' : 'secondary'}>
-                        {item.type === 'source' ? 'Source' : 'Target'}
-                      </Badge>
-                    </td>
-                    <td className="p-2 text-sm">{item.key}</td>
-                  </>
-                )}
-              </tr>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead>Source/Target</TableHead>
+              <TableHead>Transaction ID</TableHead>
+              <TableHead>Reason</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {result.unmatched.map((item, idx) => (
+              <TableRow key={idx} className="hover:bg-muted/50">
+                <TableCell>
+                  <Badge variant={item.type === 'source' ? 'outline' : 'secondary'} className={
+                    item.type === 'source' 
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-purple-50 text-purple-700 border-purple-200'
+                  }>
+                    {item.type === 'source' ? 'Source' : 'Target'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="font-medium">{item.key}</TableCell>
+                <TableCell>{item.reason}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     );
   };
@@ -513,7 +588,7 @@ const ReconciliationInterface = ({
               <h3 className="text-xl font-semibold">Matched Transactions</h3>
               <Card>
                 <CardContent className="p-3">
-                  {renderDataTable(result.matched, 'matched')}
+                  {renderMatchedDataTable()}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -522,7 +597,7 @@ const ReconciliationInterface = ({
               <h3 className="text-xl font-semibold">Unmatched Transactions</h3>
               <Card>
                 <CardContent className="p-3">
-                  {renderDataTable(result.unmatched, 'unmatched')}
+                  {renderUnmatchedDataTable()}
                 </CardContent>
               </Card>
             </TabsContent>
