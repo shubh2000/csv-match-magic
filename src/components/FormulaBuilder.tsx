@@ -36,18 +36,16 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   const [formulaItems, setFormulaItems] = useState<FormulaItem[]>([]);
   const [previewResult, setPreviewResult] = useState<string | number | null>(null);
 
-  // Find an example row with matching unique keys
   const [exampleMatch, setExampleMatch] = useState<{
     sourceRow: string[];
     targetRow: string[];
   } | null>(null);
-  
+
   useEffect(() => {
     findExampleMatch();
   }, [uniqueKeyMapping]);
 
   useEffect(() => {
-    // Update the formula string whenever formula items change
     const formulaString = formulaItems.map(item => {
       if (item.type === 'column') {
         return `${item.value}`;
@@ -74,7 +72,6 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
       return;
     }
 
-    // Build a map of target key values to rows
     const targetKeyMap = new Map<string, string[]>();
     targetData.forEach(row => {
       const keyValue = row[targetKeyIndex];
@@ -83,7 +80,6 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
       }
     });
 
-    // Find the first matching source row
     for (const sourceRow of sourceData) {
       const sourceKeyValue = sourceRow[sourceKeyIndex];
       if (sourceKeyValue && targetKeyMap.has(sourceKeyValue)) {
@@ -111,7 +107,6 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
         return;
       }
 
-      // Evaluate the formula with the example data
       const result = evaluateFormula(formula);
       setPreviewResult(result);
     } catch (error) {
@@ -160,14 +155,8 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
 
   const evaluateFormula = (formula: string): string | number => {
     try {
-      // Simple evaluation of basic mathematical operations
-      // This is a simplified version - in a real app, you'd want a more robust solution
-      // with proper validation, sanitization, and error handling
-      
-      // Extract all column values and replace them in the formula
       let evaluableFormula = formula;
       
-      // If the formula contains only strings, return their concatenation
       if (evaluableFormula.includes('"')) {
         const parts = evaluableFormula.match(/"([^"]*)"/g);
         if (parts) {
@@ -175,8 +164,6 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
         }
       }
       
-      // Otherwise evaluate as a mathematical expression
-      // eslint-disable-next-line no-eval
       const result = eval(evaluableFormula);
       return typeof result === 'number' ? Number(result.toFixed(4)) : result;
     } catch (error) {
@@ -186,9 +173,8 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   };
 
   const addColumn = (columnName: string, source: 'source' | 'target') => {
-    // If last item was a column, add a default operator first
     if (formulaItems.length > 0 && formulaItems[formulaItems.length - 1].type === 'column') {
-      addOperator('+');
+      addOperator('=');
     }
     
     setFormulaItems([
@@ -203,7 +189,6 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   };
 
   const addOperator = (operator: string) => {
-    // Don't add operator if no columns added yet or last item was already an operator
     if (formulaItems.length === 0 || formulaItems[formulaItems.length - 1].type === 'operator') {
       return;
     }
@@ -231,8 +216,21 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
     return source === 'source' ? sourceColumns : targetColumns;
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    const operatorKeys = ['+', '-', '*', '/', '=', '(', ')'];
+    const pressedKey = e.key;
+
+    if (operatorKeys.includes(pressedKey)) {
+      e.preventDefault();
+      if (formulaItems.length === 0 || formulaItems[formulaItems.length - 1].type === 'operator') {
+        return;
+      }
+      addOperator(pressedKey);
+    }
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" onKeyDown={handleKeyDown} tabIndex={0}>
       <div className="flex flex-col sm:flex-row sm:space-x-4 space-y-4 sm:space-y-0">
         <div className="w-full sm:w-1/2">
           <h3 className="text-sm font-medium mb-2">Source Columns</h3>
@@ -306,33 +304,26 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
                 </div>
               ))
             ) : (
-              <div className="text-gray-400 italic">Click or drag columns to build formula</div>
+              <div className="text-gray-400 italic">Click columns and type operators to build formula</div>
             )}
           </div>
 
-          <div className="space-y-1">
-            <div className="flex flex-wrap gap-2 mb-3">
-              <Button variant="outline" size="sm" onClick={() => addOperator('+')}>+</Button>
-              <Button variant="outline" size="sm" onClick={() => addOperator('-')}>-</Button>
-              <Button variant="outline" size="sm" onClick={() => addOperator('*')}>×</Button>
-              <Button variant="outline" size="sm" onClick={() => addOperator('/')}>÷</Button>
-              <Button variant="outline" size="sm" onClick={() => addOperator('(')}>(</Button>
-              <Button variant="outline" size="sm" onClick={() => addOperator(')')}>)</Button>
-            </div>
-            
-            {exampleMatch ? (
-              <div className="bg-muted p-3 rounded-md mt-3">
-                <div className="text-xs text-muted-foreground mb-1">Preview with sample data:</div>
-                <div className="font-mono text-sm">
-                  {previewResult !== null ? previewResult : 'Build a formula to see preview'}
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground mt-2">
-                No matching data available for preview
-              </div>
-            )}
+          <div className="text-sm text-muted-foreground mb-3">
+            Type operators (+, -, *, /, =) or click columns to build your formula
           </div>
+
+          {exampleMatch ? (
+            <div className="bg-muted p-3 rounded-md mt-3">
+              <div className="text-xs text-muted-foreground mb-1">Preview with sample data:</div>
+              <div className="font-mono text-sm">
+                {previewResult !== null ? previewResult : 'Build a formula to see preview'}
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground mt-2">
+              No matching data available for preview
+            </div>
+          )}
         </Card>
       </div>
     </div>
