@@ -83,34 +83,42 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="bg-gradient-header text-white py-6 px-4 shadow-md">
-        <div className="container mx-auto">
-          <h1 className="text-3xl font-bold">CSV Reconciliation Tool</h1>
-          <p className="mt-2 text-slate-100">Match, reconcile, and analyze CSV files with ease</p>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/50">
+      {/* Header with modern gradient and shadow */}
+      <header className="relative bg-gradient-to-r from-blue-600 to-blue-800 text-white py-8 px-4 shadow-lg">
+        <div className="container mx-auto max-w-6xl">
+          <h1 className="text-4xl font-bold tracking-tight mb-2 bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent">
+            CSV Reconciliation Tool
+          </h1>
+          <p className="text-lg text-blue-100 max-w-2xl">
+            Advanced data matching and reconciliation platform for your CSV files
+          </p>
         </div>
+        {/* Decorative element */}
+        <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:60px_60px]" />
       </header>
       
-      {/* Main content */}
-      <main className="container mx-auto px-4 py-8">
+      {/* Main content with improved spacing and container */}
+      <main className="container mx-auto max-w-6xl px-4 py-12">
         {stage === 'upload' && (
-          <>
-            <div className="max-w-3xl mx-auto mb-8 text-center">
-              <h2 className="text-2xl font-semibold mb-4">Upload Files for Reconciliation</h2>
-              <p className="text-muted-foreground">
+          <div className="space-y-8">
+            <div className="max-w-3xl mx-auto text-center space-y-4">
+              <h2 className="text-2xl font-semibold text-gray-900">
+                Upload Files for Reconciliation
+              </h2>
+              <p className="text-gray-600 text-lg">
                 Upload two CSV files to analyze and reconcile their data.
-                The system will automatically detect headers, unique keys, and help you establish reconciliation logic.
+                Our intelligent system will help you match and validate your data efficiently.
               </p>
             </div>
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200/50 p-8">
               <FileUploadForm onFilesUploaded={handleFilesUploaded} />
             </div>
-          </>
+          </div>
         )}
         
         {stage === 'matching' && sourceData && targetData && (
-          <div className="max-w-5xl mx-auto">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200/50 p-8">
             <MatchingInterface
               sourceData={sourceData}
               targetData={targetData}
@@ -122,7 +130,7 @@ const Index = () => {
         )}
         
         {stage === 'reconciliation' && sourceData && targetData && uniqueKeyMapping && reconciliationColumns && (
-          <div className="max-w-5xl mx-auto">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200/50 p-8">
             <ReconciliationInterface
               sourceData={sourceData}
               targetData={targetData}
@@ -134,10 +142,12 @@ const Index = () => {
         )}
       </main>
       
-      {/* Footer */}
-      <footer className="mt-auto py-6 bg-gray-100 border-t">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>CSV Reconciliation Tool &copy; {new Date().getFullYear()} - Advanced data reconciliation</p>
+      {/* Footer with gradient fade */}
+      <footer className="mt-auto py-8 bg-gradient-to-t from-gray-100 to-transparent border-t border-gray-200/50">
+        <div className="container mx-auto px-4 text-center">
+          <p className="text-sm text-gray-600">
+            CSV Reconciliation Tool &copy; {new Date().getFullYear()} - Advanced data reconciliation
+          </p>
         </div>
       </footer>
       
