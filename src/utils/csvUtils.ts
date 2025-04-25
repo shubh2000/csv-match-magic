@@ -54,6 +54,20 @@ const detectHeaderRow = (lines: string[]): number => {
     ).length;
     if (specialWordCount > 0) score += specialWordCount * 2;
     
+    // 5. Check if next few rows after this one have similar structure
+    // This helps identify table headers in files with multiple tables
+    if (i + 1 < lines.length) {
+      const nextRowCells = lines[i + 1].split(',').map(cell => cell.trim());
+      // If next row has the same number of cells, it might be a data row
+      if (nextRowCells.length === cells.length) {
+        score += 10;
+        
+        // If the next row has more numeric values, this is likely a header
+        const nextNumericCount = nextRowCells.filter(cell => !isNaN(Number(cell))).length;
+        if (nextNumericCount > numericCellCount) score += 5;
+      }
+    }
+    
     rowScores.push(score);
   }
   
@@ -102,10 +116,10 @@ export const parseCSVFile = async (file: File): Promise<{
       // Extract headers from the detected header row
       const headers = lines[headerRowIndex].split(",").map(header => header.trim());
       
-      // Extract data rows (up to 100 rows after the header)
-      const data = lines.slice(headerRowIndex + 1, Math.min(lines.length, headerRowIndex + 101))
+      // Extract data rows (all rows after the header)
+      const data = lines.slice(headerRowIndex + 1)
         .map(line => line.split(",").map(cell => cell.trim()))
-        .filter(row => row.length === headers.length); // Ensure complete rows
+        .filter(row => row.length === headers.length && row.some(cell => cell.trim() !== '')); // Ensure complete non-empty rows
       
       console.log(`Parsed CSV with ${headers.length} headers and ${data.length} data rows`);
       
@@ -129,4 +143,239 @@ export const createCSVBlob = (headers: string[], data: string[][]): Blob => {
   ].join("\n");
   
   return new Blob([csvContent], { type: "text/csv" });
+};
+
+// Detect potential unique identifiers in CSV data
+export const detectUniqueKeys = (headers: string[], data: string[][]): string[] => {
+  const uniqueKeys: string[] = [];
+  
+  headers.forEach((header, index) => {
+    // Skip very small column names or generic-sounding ones
+    if (header.length < 2 || ['id', 'no', 'num', '#'].includes(header.toLowerCase())) {
+      return;
+    }
+    
+    // Extract all values for this column
+    const columnValues = data.map(row => row[index]);
+    
+    // Check if all values are present and unique
+    const hasEmptyValues = columnValues.some(value => !value || value.trim() === '');
+    if (hasEmptyValues) return;
+    
+    // Check for duplicates
+    const uniqueValues = new Set(columnValues);
+    
+    // If all values are unique or almost unique (>95%), consider it a potential key
+    const uniquenessRatio = uniqueValues.size / columnValues.length;
+    if (uniquenessRatio > 0.95) {
+      uniqueKeys.push(header);
+    }
+  });
+
+  return uniqueKeys;
+};
+
+// Find matching unique keys between two datasets
+export const findMatchingUniqueKeys = (
+  sourceHeaders: string[],
+  sourceData: string[][],
+  targetHeaders: string[],
+  targetData: string[][]
+): Array<{
+  sourceKey: string;
+  targetKey: string;
+  confidence: number;
+  matchingValuesCount: number;
+}> => {
+  const sourceUniqueKeys = detectUniqueKeys(sourceHeaders, sourceData);
+  const targetUniqueKeys = detectUniqueKeys(targetHeaders, targetData);
+  
+  if (sourceUniqueKeys.length === 0 || targetUniqueKeys.length === 0) {
+    return [];
+  }
+  
+  const results: Array<{
+    sourceKey: string;
+    targetKey: string;
+    confidence: number;
+    matchingValuesCount: number;
+  }> = [];
+  
+  // Compare each source key with each target key
+  sourceUniqueKeys.forEach(sourceKey => {
+    const sourceKeyIndex = sourceHeaders.indexOf(sourceKey);
+    const sourceValues = sourceData.map(row => row[sourceKeyIndex]);
+    
+    targetUniqueKeys.forEach(targetKey => {
+      const targetKeyIndex = targetHeaders.indexOf(targetKey);
+      const targetValues = targetData.map(row => row[targetKeyIndex]);
+      
+      // Count matching values
+      let matchingCount = 0;
+      const sourceValuesSet = new Set(sourceValues);
+      
+      targetValues.forEach(value => {
+        if (sourceValuesSet.has(value)) {
+          matchingCount++;
+        }
+      });
+      
+      // Calculate name similarity
+      const nameSimilarity = calculateStringSimilarity(sourceKey, targetKey);
+      
+      // Calculate match percentage
+      const matchPercentage = (matchingCount / Math.min(sourceValues.length, targetValues.length)) * 100;
+      
+      // Combined confidence score (weighted)
+      const confidence = (matchPercentage * 0.7) + (nameSimilarity * 0.3);
+      
+      results.push({
+        sourceKey,
+        targetKey,
+        confidence: Math.round(confidence),
+        matchingValuesCount: matchingCount
+      });
+    });
+  });
+  
+  // Sort by confidence
+  return results.sort((a, b) => b.confidence - a.confidence);
+};
+
+// Calculate string similarity (used for header matching)
+export const calculateStringSimilarity = (str1: string, str2: string): number => {
+  const s1 = str1.toLowerCase();
+  const s2 = str2.toLowerCase();
+  
+  // Exact match
+  if (s1 === s2) return 100;
+  
+  // Check for inclusion
+  if (s1.includes(s2) || s2.includes(s1)) {
+    const ratio = Math.min(s1.length, s2.length) / Math.max(s1.length, s2.length);
+    return Math.round(ratio * 80); // Max 80% for inclusion
+  }
+  
+  // Calculate Levenshtein distance (simplified version)
+  const maxLen = Math.max(s1.length, s2.length);
+  if (maxLen === 0) return 100; // Both empty strings
+  
+  let matchCount = 0;
+  const len = Math.min(s1.length, s2.length);
+  
+  for (let i = 0; i < len; i++) {
+    if (s1[i] === s2[i]) {
+      matchCount++;
+    }
+  }
+  
+  return Math.round((matchCount / maxLen) * 60); // Max 60% for character matching
+};
+
+// Analyze relationships between columns
+export const analyzeColumnRelationship = (
+  sourceColumns: string[],
+  sourceData: string[][],
+  sourceHeaders: string[],
+  targetColumns: string[],
+  targetData: string[][],
+  targetHeaders: string[],
+  uniqueKeyMapping: { sourceKey: string; targetKey: string }
+): { formula: string; confidence: number } => {
+  // Get indices for the columns and unique keys
+  const sourceIndices = sourceColumns.map(col => sourceHeaders.indexOf(col));
+  const targetIndices = targetColumns.map(col => targetHeaders.indexOf(col));
+  const sourceKeyIndex = sourceHeaders.indexOf(uniqueKeyMapping.sourceKey);
+  const targetKeyIndex = targetHeaders.indexOf(uniqueKeyMapping.targetKey);
+  
+  // Find matching rows based on the unique key
+  const matchingPairs: Array<{ sourceRow: string[]; targetRow: string[] }> = [];
+  
+  // Build a map of target key values to rows for faster lookup
+  const targetKeyMap = new Map<string, string[]>();
+  targetData.forEach(row => {
+    const keyValue = row[targetKeyIndex];
+    if (keyValue && keyValue.trim()) {
+      targetKeyMap.set(keyValue, row);
+    }
+  });
+  
+  // Find all matching rows
+  sourceData.forEach(sourceRow => {
+    const sourceKeyValue = sourceRow[sourceKeyIndex];
+    if (sourceKeyValue && targetKeyMap.has(sourceKeyValue)) {
+      matchingPairs.push({
+        sourceRow,
+        targetRow: targetKeyMap.get(sourceKeyValue)!
+      });
+    }
+  });
+  
+  if (matchingPairs.length === 0) {
+    return { formula: "No matching data found", confidence: 0 };
+  }
+  
+  // Use the first matching pair to determine relationship
+  const { sourceRow, targetRow } = matchingPairs[0];
+  
+  // Extract values for source and target columns
+  const sourceValues = sourceIndices.map(idx => {
+    const val = sourceRow[idx];
+    return isNaN(Number(val)) ? val : Number(val);
+  });
+  
+  const targetValues = targetIndices.map(idx => {
+    const val = targetRow[idx];
+    return isNaN(Number(val)) ? val : Number(val);
+  });
+  
+  // For simplicity in this initial version, let's check for basic arithmetic relationships
+  // if all values are numeric
+  if (sourceValues.every(v => typeof v === 'number') && 
+      targetValues.every(v => typeof v === 'number') &&
+      sourceValues.length > 0 && targetValues.length === 1) {
+    
+    const targetValue = targetValues[0] as number;
+    
+    // Try addition
+    const sumSourceValues = (sourceValues as number[]).reduce((sum, val) => sum + val, 0);
+    if (Math.abs(sumSourceValues - targetValue) < 0.001) {
+      const formula = `${sourceColumns.join(' + ')} = ${targetColumns[0]}`;
+      return { formula, confidence: 95 };
+    }
+    
+    // Try subtraction (if 2 source columns)
+    if (sourceValues.length === 2) {
+      const diff = Math.abs((sourceValues[0] as number) - (sourceValues[1] as number));
+      if (Math.abs(diff - targetValue) < 0.001) {
+        const formula = `|${sourceColumns[0]} - ${sourceColumns[1]}| = ${targetColumns[0]}`;
+        return { formula, confidence: 90 };
+      }
+    }
+    
+    // Try multiplication
+    const product = (sourceValues as number[]).reduce((prod, val) => prod * val, 1);
+    if (Math.abs(product - targetValue) < 0.001) {
+      const formula = `${sourceColumns.join(' × ')} = ${targetColumns[0]}`;
+      return { formula, confidence: 85 };
+    }
+  }
+  
+  // Check for string concatenation
+  if (sourceValues.every(v => typeof v === 'string') && 
+      targetValues.every(v => typeof v === 'string') && 
+      targetValues.length === 1) {
+      
+    const combined = (sourceValues as string[]).join('');
+    if (combined === targetValues[0]) {
+      const formula = `${sourceColumns.join(' + ')} = ${targetColumns[0]} (concatenation)`;
+      return { formula, confidence: 90 };
+    }
+  }
+  
+  // If no clear pattern is found
+  return { 
+    formula: "Custom formula needed", 
+    confidence: 0 
+  };
 };
