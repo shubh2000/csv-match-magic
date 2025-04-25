@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +11,7 @@ import { Check, ChevronRight, Key, Link, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import FormulaBuilder from './FormulaBuilder';
 
 interface MatchingInterfaceProps {
   sourceData: {
@@ -242,8 +242,11 @@ const MatchingInterface = ({
     
     toast.success('Reconciliation formula confirmed');
   };
+
+  const handleCustomFormulaChange = (formula: string) => {
+    setCustomFormula(formula);
+  };
   
-  // Render different steps
   const renderUniqueKeyIdentification = () => {
     return (
       <>
@@ -517,6 +520,10 @@ const MatchingInterface = ({
   };
   
   const renderConfirmFormula = () => {
+    const keyInfo = manualKeySelection ? 
+      { sourceKey: manualSourceKey, targetKey: manualTargetKey, confidence: 0 } :
+      selectedUniqueKey!;
+      
     return (
       <>
         <div className="flex justify-between items-center mb-4">
@@ -525,33 +532,27 @@ const MatchingInterface = ({
         
         <Card className="mb-6">
           <CardContent className="p-6 space-y-6">
-            <div>
-              <h3 className="text-lg font-medium mb-4">Detected Formula</h3>
-              <div className="bg-muted p-4 rounded-md space-y-4">
-                <div className="flex justify-between items-center">
-                  <div className="font-mono text-lg">
-                    {formulaResult?.formula || 'No formula detected'}
+            {!useCustomFormula && formulaResult && (
+              <div>
+                <h3 className="text-lg font-medium mb-4">Detected Formula</h3>
+                <div className="bg-muted p-4 rounded-md space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div className="font-mono text-lg">
+                      {formulaResult.formula || 'No formula detected'}
+                    </div>
+                    
+                    {formulaResult.confidence > 0 && (
+                      <Badge className={`${
+                        formulaResult.confidence > 80 ? 'bg-green-500' :
+                        formulaResult.confidence > 50 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}>
+                        {formulaResult.confidence}% confidence
+                      </Badge>
+                    )}
                   </div>
-                  
-                  {formulaResult && formulaResult.confidence > 0 && (
-                    <Badge className={`${
-                      formulaResult.confidence > 80 ? 'bg-green-500' :
-                      formulaResult.confidence > 50 ? 'bg-yellow-500' : 'bg-red-500'
-                    }`}>
-                      {formulaResult.confidence}% confidence
-                    </Badge>
-                  )}
-                </div>
-                
-                <div className="text-sm text-muted-foreground">
-                  <p>This formula shows the relationship between:</p>
-                  <ul className="list-disc list-inside mt-1 space-y-1">
-                    <li><strong>Source:</strong> {selectedSourceColumns.join(', ')}</li>
-                    <li><strong>Target:</strong> {selectedTargetColumns.join(', ')}</li>
-                  </ul>
                 </div>
               </div>
-            </div>
+            )}
             
             <div className="space-y-3">
               <div className="flex items-center space-x-2">
@@ -560,46 +561,33 @@ const MatchingInterface = ({
                   onCheckedChange={setUseCustomFormula} 
                   id="custom-formula"
                 />
-                <Label htmlFor="custom-formula">Use custom formula</Label>
+                <Label htmlFor="custom-formula">Build custom formula</Label>
               </div>
               
               {useCustomFormula && (
-                <div className="space-y-2">
-                  <Label htmlFor="formula-input">Custom Formula</Label>
-                  <Input
-                    id="formula-input"
-                    value={customFormula}
-                    onChange={(e) => setCustomFormula(e.target.value)}
-                    placeholder="Enter custom formula or relationship"
-                    className="w-full"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Define the relationship between source and target columns in your own words
-                  </p>
-                </div>
+                <FormulaBuilder
+                  sourceColumns={selectedSourceColumns}
+                  targetColumns={selectedTargetColumns}
+                  sourceData={sourceData.data}
+                  targetData={targetData.data}
+                  sourceHeaders={sourceData.headers}
+                  targetHeaders={targetData.headers}
+                  uniqueKeyMapping={{
+                    sourceKey: keyInfo.sourceKey,
+                    targetKey: keyInfo.targetKey
+                  }}
+                  onFormulaChange={handleCustomFormulaChange}
+                />
               )}
             </div>
             
             <Separator />
             
             <div>
-              <h3 className="text-lg font-medium mb-2">Selected Data</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="border rounded-md p-3">
-                  <h4 className="text-sm font-semibold mb-2">Source Columns</h4>
-                  <ul className="space-y-1">
-                    {selectedSourceColumns.map(column => (
-                      <li key={column} className="text-sm">{column}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="border rounded-md p-3">
-                  <h4 className="text-sm font-semibold mb-2">Target Columns</h4>
-                  <ul className="space-y-1">
-                    {selectedTargetColumns.map(column => (
-                      <li key={column} className="text-sm">{column}</li>
-                    ))}
-                  </ul>
+              <h3 className="text-lg font-medium mb-2">Final Formula Preview</h3>
+              <div className="bg-slate-100 p-4 rounded-md">
+                <div className="font-mono break-all">
+                  {useCustomFormula ? customFormula : (formulaResult?.formula || 'No formula available')}
                 </div>
               </div>
             </div>
@@ -621,10 +609,8 @@ const MatchingInterface = ({
     );
   };
   
-  // Main render based on current step
   return (
     <div className="space-y-6">
-      {/* Progress steps */}
       <div className="flex justify-between mb-6">
         <div className="hidden sm:flex w-full max-w-3xl mx-auto justify-between">
           {Object.entries(STEPS).map(([key, value], index, array) => (
