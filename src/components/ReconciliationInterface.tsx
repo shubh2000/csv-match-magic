@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -89,51 +88,72 @@ const ReconciliationInterface = ({
   const [result, setResult] = useState<ReconciliationResult | null>(null);
   const [activeTab, setActiveTab] = useState('summary');
   
+  const evaluateFormulaForRow = (columns: string[], row: Record<string, string>, headers: string[]): number | string => {
+    if (columns.length === 0) return 0;
+
+    if (columns.length === 1) {
+      const value = row[columns[0]];
+      return isNaN(Number(value)) ? value : Number(value);
+    }
+    
+    let result: number = 0;
+    
+    const formula = reconciliationColumns.formula;
+    if (formula.includes('=')) {
+      const isSource = columns === reconciliationColumns.sourceColumns;
+      const formulaParts = formula.split('=');
+      const relevantFormula = isSource ? formulaParts[0].trim() : formulaParts[1].trim();
+      
+      try {
+        let expression = relevantFormula;
+        for (const column of columns) {
+          const regex = new RegExp(column, 'g');
+          const value = row[column];
+          const numericValue = isNaN(Number(value)) ? 0 : Number(value);
+          expression = expression.replace(regex, numericValue.toString());
+        }
+        
+        result = eval(expression);
+        return isNaN(result) ? 0 : result;
+      } catch (error) {
+        console.error('Error evaluating formula:', error);
+        return 0;
+      }
+    } else {
+      return columns.reduce((sum, col) => {
+        const val = row[col];
+        return sum + (isNaN(Number(val)) ? 0 : Number(val));
+      }, 0);
+    }
+  };
+  
   const performReconciliation = () => {
     setIsReconciling(true);
     
-    // Simulate a delay for processing
     setTimeout(() => {
       try {
-        // Convert source data to map for easy lookup by key
         const sourceMap = new Map();
         const sourceKeyIndex = sourceData.headers.indexOf(uniqueKeyMapping.sourceKey);
-        const sourceColumnIndices = reconciliationColumns.sourceColumns.map(col => 
-          sourceData.headers.indexOf(col)
-        );
         
         sourceData.data.forEach(row => {
           const keyValue = row[sourceKeyIndex];
           if (keyValue) {
-            // Create structured row object
             const rowObj: Record<string, string> = {};
             sourceData.headers.forEach((header, idx) => {
               rowObj[header] = row[idx];
             });
             
-            // Calculate the source value based on columns (basic implementation for now)
-            let sourceValue: number | string = 0;
-            if (sourceColumnIndices.length === 1) {
-              sourceValue = isNaN(Number(row[sourceColumnIndices[0]])) 
-                ? row[sourceColumnIndices[0]] 
-                : Number(row[sourceColumnIndices[0]]);
-            } else {
-              // Sum all numeric values for simplicity
-              sourceValue = sourceColumnIndices.reduce((sum, idx) => {
-                const val = row[idx];
-                return sum + (isNaN(Number(val)) ? 0 : Number(val));
-              }, 0);
-            }
+            const sourceValue = evaluateFormulaForRow(
+              reconciliationColumns.sourceColumns, 
+              rowObj, 
+              sourceData.headers
+            );
             
             sourceMap.set(keyValue, { row: rowObj, value: sourceValue });
           }
         });
         
-        // Process target data
         const targetKeyIndex = targetData.headers.indexOf(uniqueKeyMapping.targetKey);
-        const targetColumnIndices = reconciliationColumns.targetColumns.map(col => 
-          targetData.headers.indexOf(col)
-        );
         
         const matched: ReconciliationResult['matched'] = [];
         const unmatchedSource: Array<{ type: 'source'; row: Record<string, string>; key: string; reason: string }> = [];
@@ -145,36 +165,25 @@ const ReconciliationInterface = ({
         let perfectMatches = 0;
         let valueMismatches = 0;
         
-        // Process target rows and find matches
         targetData.data.forEach(row => {
           const keyValue = row[targetKeyIndex];
           if (!keyValue) return;
           
-          // Create structured row object
           const rowObj: Record<string, string> = {};
           targetData.headers.forEach((header, idx) => {
             rowObj[header] = row[idx];
           });
           
-          // Calculate the target value based on columns
-          let targetValue: number | string = 0;
-          if (targetColumnIndices.length === 1) {
-            targetValue = isNaN(Number(row[targetColumnIndices[0]])) 
-              ? row[targetColumnIndices[0]] 
-              : Number(row[targetColumnIndices[0]]);
-          } else {
-            // Sum all numeric values for simplicity
-            targetValue = targetColumnIndices.reduce((sum, idx) => {
-              const val = row[idx];
-              return sum + (isNaN(Number(val)) ? 0 : Number(val));
-            }, 0);
-          }
+          const targetValue = evaluateFormulaForRow(
+            reconciliationColumns.targetColumns, 
+            rowObj, 
+            targetData.headers
+          );
           
           if (sourceMap.has(keyValue)) {
             const sourceItem = sourceMap.get(keyValue);
-            sourceMap.delete(keyValue); // Remove from source map to track unmatched later
+            sourceMap.delete(keyValue);
             
-            // Calculate difference if numeric
             let difference = null;
             let status: 'matched' | 'value_mismatch' = 'matched';
             
@@ -184,8 +193,7 @@ const ReconciliationInterface = ({
               totalTargetValue += targetValue;
               totalDifference += difference;
               
-              // Check if values match exactly or have a difference
-              if (Math.abs(difference) < 0.001) { // Using small epsilon for floating-point comparison
+              if (Math.abs(difference) < 0.001) {
                 difference = 0;
                 perfectMatches++;
               } else {
@@ -193,7 +201,6 @@ const ReconciliationInterface = ({
                 valueMismatches++;
               }
             } else if (sourceItem.value !== targetValue) {
-              // Non-numeric values that don't match
               status = 'value_mismatch';
               valueMismatches++;
             } else {
@@ -210,7 +217,6 @@ const ReconciliationInterface = ({
               status
             });
           } else {
-            // Target row has no matching source
             unmatchedTarget.push({ 
               type: 'target', 
               row: rowObj,
@@ -220,7 +226,6 @@ const ReconciliationInterface = ({
           }
         });
         
-        // All remaining items in sourceMap are unmatched
         sourceMap.forEach((value, key) => {
           unmatchedSource.push({ 
             type: 'source', 
@@ -234,10 +239,8 @@ const ReconciliationInterface = ({
           }
         });
         
-        // Combine unmatched from both sources
         const unmatched = [...unmatchedSource, ...unmatchedTarget];
         
-        // Calculate summary statistics
         const totalTransactions = matched.length + unmatched.length;
         const matchedTransactions = matched.length;
         const unmatchedTransactions = unmatched.length;
@@ -404,7 +407,6 @@ const ReconciliationInterface = ({
       return <p className="text-center py-4">No matched transactions found</p>;
     }
     
-    // Get all matched transactions
     const { matched } = result;
     const hasDifferences = matched.some(item => item.status === 'value_mismatch');
     
@@ -414,15 +416,12 @@ const ReconciliationInterface = ({
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead>Transaction ID</TableHead>
-              {reconciliationColumns.sourceColumns.map(col => (
-                <TableHead key={`source-${col}`}>Source: {col}</TableHead>
-              ))}
-              {reconciliationColumns.targetColumns.map(col => (
-                <TableHead key={`target-${col}`}>Target: {col}</TableHead>
-              ))}
+              <TableHead>Source Value</TableHead>
+              <TableHead>Target Value</TableHead>
               {hasDifferences && (
-                <TableHead>Status</TableHead>
+                <TableHead>Difference</TableHead>
               )}
+              <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -433,25 +432,24 @@ const ReconciliationInterface = ({
                   : 'hover:bg-muted/50'
               }>
                 <TableCell className="font-medium">{item.key}</TableCell>
-                {reconciliationColumns.sourceColumns.map(col => (
-                  <TableCell key={col}>{item.sourceRow[col]}</TableCell>
-                ))}
-                {reconciliationColumns.targetColumns.map(col => (
-                  <TableCell key={col}>{item.targetRow[col]}</TableCell>
-                ))}
+                <TableCell>{typeof item.sourceValue === 'number' ? item.sourceValue.toFixed(2) : item.sourceValue}</TableCell>
+                <TableCell>{typeof item.targetValue === 'number' ? item.targetValue.toFixed(2) : item.targetValue}</TableCell>
                 {hasDifferences && (
-                  <TableCell>
-                    {item.status === 'value_mismatch' ? (
-                      <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                        Value mismatch
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                        Perfect match
-                      </Badge>
-                    )}
+                  <TableCell className={item.difference !== 0 && item.difference !== null ? 'text-red-600' : ''}>
+                    {typeof item.difference === 'number' ? item.difference.toFixed(2) : '-'}
                   </TableCell>
                 )}
+                <TableCell>
+                  {item.status === 'value_mismatch' ? (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                      Value mismatch
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                      Perfect match
+                    </Badge>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -508,7 +506,6 @@ const ReconciliationInterface = ({
         </div>
       </div>
       
-      {/* Reconciliation setup info */}
       <Card className="bg-muted/30">
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
