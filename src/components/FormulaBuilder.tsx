@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,8 @@ type FormulaItem = {
   source: 'source' | 'target' | 'manual';
 };
 
+type FormulaPartType = 'source' | 'target';
+
 const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   sourceColumns,
   targetColumns,
@@ -34,29 +37,55 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   onFormulaChange,
 }) => {
   const [formulaItems, setFormulaItems] = useState<FormulaItem[]>([]);
-  const [previewResult, setPreviewResult] = useState<string | number | null>(null);
+  const [previewResult, setPreviewResult] = useState<{
+    sourceResult: string | number | null;
+    targetResult: string | number | null;
+    matched: boolean;
+  } | null>(null);
 
   const [exampleMatch, setExampleMatch] = useState<{
     sourceRow: string[];
     targetRow: string[];
   } | null>(null);
 
+  // Track whether we're building the source or target part of the formula
+  const [currentPart, setCurrentPart] = useState<FormulaPartType>('source');
+
   useEffect(() => {
     findExampleMatch();
   }, [uniqueKeyMapping]);
 
   useEffect(() => {
-    const formulaString = formulaItems.map(item => {
-      if (item.type === 'column') {
-        return `${item.value}`;
-      } else {
-        return ` ${item.value} `;
-      }
-    }).join('');
-    
-    onFormulaChange(formulaString.trim());
+    // Format the formula to send to parent
+    const formula = formatFormula();
+    onFormulaChange(formula);
     updatePreviewResult();
-  }, [formulaItems, exampleMatch]);
+  }, [formulaItems, exampleMatch, currentPart]);
+
+  const formatFormula = () => {
+    // Find the equals sign position
+    const equalsIndex = formulaItems.findIndex(
+      item => item.type === 'operator' && item.value === '='
+    );
+    
+    if (equalsIndex === -1) {
+      // No equals sign yet, just join all items
+      return formulaItems.map(item => item.value).join('');
+    }
+    
+    // Format with source and target parts
+    const sourcePart = formulaItems
+      .slice(0, equalsIndex)
+      .map(item => item.value)
+      .join('');
+      
+    const targetPart = formulaItems
+      .slice(equalsIndex + 1)
+      .map(item => item.value)
+      .join('');
+      
+    return `${sourcePart} = ${targetPart}`;
+  };
 
   const findExampleMatch = () => {
     if (!uniqueKeyMapping || !sourceData.length || !targetData.length) {
@@ -96,40 +125,90 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
 
   const updatePreviewResult = () => {
     if (!exampleMatch) {
-      setPreviewResult('No matching data found');
+      setPreviewResult(null);
+      return;
+    }
+
+    // Find the position of equals sign
+    const equalsIndex = formulaItems.findIndex(
+      item => item.type === 'operator' && item.value === '='
+    );
+
+    // If no equals sign, we can't compare
+    if (equalsIndex === -1) {
+      setPreviewResult(null);
       return;
     }
 
     try {
-      const formula = buildFormulaExpression();
-      if (!formula) {
-        setPreviewResult(null);
-        return;
-      }
+      // Split items into source and target parts
+      const sourceItems = formulaItems.slice(0, equalsIndex);
+      const targetItems = formulaItems.slice(equalsIndex + 1);
 
-      const result = evaluateFormula(formula);
-      setPreviewResult(result);
+      // Evaluate both parts
+      const sourceResult = evaluateFormulaPart(sourceItems);
+      const targetResult = evaluateFormulaPart(targetItems);
+
+      // Check if they match
+      const matched = sourceResult !== null && 
+                      targetResult !== null && 
+                      typeof sourceResult === typeof targetResult &&
+                      (
+                        typeof sourceResult === 'number' 
+                          ? Math.abs((sourceResult as number) - (targetResult as number)) < 0.001
+                          : sourceResult === targetResult
+                      );
+
+      setPreviewResult({
+        sourceResult,
+        targetResult,
+        matched
+      });
     } catch (error) {
       console.error('Error evaluating formula:', error);
-      setPreviewResult('Error in formula');
+      setPreviewResult({
+        sourceResult: 'Error',
+        targetResult: 'Error',
+        matched: false
+      });
     }
   };
 
-  const buildFormulaExpression = () => {
-    if (formulaItems.length === 0) return '';
+  const evaluateFormulaPart = (items: FormulaItem[]): string | number | null => {
+    if (items.length === 0) return null;
 
+    // Build expression with replaced values
     let expression = '';
     
-    formulaItems.forEach(item => {
+    items.forEach(item => {
       if (item.type === 'column') {
         const value = getColumnValue(item.value, item.source);
-        expression += typeof value === 'number' ? value : `"${value}"`;
-      } else {
+        if (typeof value === 'number') {
+          expression += value;
+        } else {
+          expression += `"${value}"`;
+        }
+      } else if (item.type === 'operator') {
         expression += item.value;
       }
     });
 
-    return expression;
+    if (!expression) return null;
+
+    // Evaluate the expression
+    try {
+      // Handle string operations
+      if (expression.includes('"')) {
+        // Simple string concatenation for now
+        return expression.replace(/"/g, '');
+      }
+      
+      // Handle numeric operations
+      return eval(expression);
+    } catch (error) {
+      console.error('Error evaluating part:', error, expression);
+      return 'Error';
+    }
   };
 
   const getColumnValue = (columnName: string, source: 'source' | 'target' | 'manual') => {
@@ -153,28 +232,14 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
     return value;
   };
 
-  const evaluateFormula = (formula: string): string | number => {
-    try {
-      let evaluableFormula = formula;
-      
-      if (evaluableFormula.includes('"')) {
-        const parts = evaluableFormula.match(/"([^"]*)"/g);
-        if (parts) {
-          return parts.map(p => p.replace(/"/g, '')).join('');
-        }
-      }
-      
-      const result = eval(evaluableFormula);
-      return typeof result === 'number' ? Number(result.toFixed(4)) : result;
-    } catch (error) {
-      console.error('Error evaluating formula:', error, formula);
-      return 'Invalid formula';
-    }
-  };
-
   const addColumn = (columnName: string, source: 'source' | 'target') => {
-    if (formulaItems.length > 0 && formulaItems[formulaItems.length - 1].type === 'column') {
-      addOperator('=');
+    // Toggle the currentPart if needed
+    if (source !== currentPart) {
+      // If we're switching sides and there's no equals sign, add it
+      const hasEquals = formulaItems.some(item => item.type === 'operator' && item.value === '=');
+      if (!hasEquals) {
+        addOperator('=');
+      }
     }
     
     setFormulaItems([
@@ -186,11 +251,26 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
         source 
       }
     ]);
+
+    // Update current part if we've passed an equals sign
+    if (formulaItems.some(item => item.type === 'operator' && item.value === '=')) {
+      setCurrentPart('target');
+    }
   };
 
   const addOperator = (operator: string) => {
+    // Don't add operator at beginning or after another operator
     if (formulaItems.length === 0 || formulaItems[formulaItems.length - 1].type === 'operator') {
       return;
+    }
+    
+    // If it's an equals sign, switch to target part
+    if (operator === '=') {
+      // Don't allow multiple equals signs
+      if (formulaItems.some(item => item.type === 'operator' && item.value === '=')) {
+        return;
+      }
+      setCurrentPart('target');
     }
     
     setFormulaItems([
@@ -205,15 +285,22 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   };
 
   const removeItem = (id: string) => {
-    setFormulaItems(formulaItems.filter(item => item.id !== id));
+    const newItems = formulaItems.filter(item => item.id !== id);
+    
+    // If we removed the equals sign, reset current part to source
+    if (
+      formulaItems.some(item => item.id === id && item.type === 'operator' && item.value === '=') &&
+      !newItems.some(item => item.type === 'operator' && item.value === '=')
+    ) {
+      setCurrentPart('source');
+    }
+    
+    setFormulaItems(newItems);
   };
 
   const clearFormula = () => {
     setFormulaItems([]);
-  };
-
-  const getColumnsFromSource = (source: 'source' | 'target') => {
-    return source === 'source' ? sourceColumns : targetColumns;
+    setCurrentPart('source');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -239,7 +326,9 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
               <Badge 
                 key={`source-${column}`}
                 variant="outline"
-                className="m-1 cursor-pointer hover:bg-primary/20 transition-colors"
+                className={`m-1 cursor-pointer hover:bg-primary/20 transition-colors ${
+                  currentPart === 'source' ? 'border-blue-400' : ''
+                }`}
                 onClick={() => addColumn(column, 'source')}
               >
                 {column}
@@ -255,7 +344,9 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
               <Badge 
                 key={`target-${column}`}
                 variant="outline"
-                className="m-1 cursor-pointer hover:bg-primary/20 transition-colors"
+                className={`m-1 cursor-pointer hover:bg-primary/20 transition-colors ${
+                  currentPart === 'target' ? 'border-green-400' : ''
+                }`}
                 onClick={() => addColumn(column, 'target')}
               >
                 {column}
@@ -289,7 +380,7 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
                     flex items-center px-2 py-1 rounded 
                     ${item.type === 'column' 
                       ? (item.source === 'source' ? 'bg-blue-100' : 'bg-green-100') 
-                      : 'bg-gray-100'}
+                      : item.value === '=' ? 'bg-amber-100' : 'bg-gray-100'}
                   `}
                 >
                   <span className="mr-1">
@@ -309,15 +400,44 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
           </div>
 
           <div className="text-sm text-muted-foreground mb-3">
-            Type operators (+, -, *, /, =) or click columns to build your formula
+            Type operators (+, -, *, /, =, (, )) or click columns to build your formula
           </div>
 
           {exampleMatch ? (
             <div className="bg-muted p-3 rounded-md mt-3">
               <div className="text-xs text-muted-foreground mb-1">Preview with sample data:</div>
-              <div className="font-mono text-sm">
-                {previewResult !== null ? previewResult : 'Build a formula to see preview'}
-              </div>
+              
+              {previewResult ? (
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono text-sm text-blue-600">
+                      Source: {previewResult.sourceResult !== null ? previewResult.sourceResult : 'N/A'}
+                    </span>
+                    <span className="text-sm">{previewResult.matched ? '✓' : '≠'}</span>
+                    <span className="font-mono text-sm text-green-600">
+                      Target: {previewResult.targetResult !== null ? previewResult.targetResult : 'N/A'}
+                    </span>
+                  </div>
+                  
+                  {previewResult.matched ? (
+                    <div className="text-green-600 text-sm font-medium">
+                      Values match! Reconciliation successful.
+                    </div>
+                  ) : previewResult.sourceResult !== null && previewResult.targetResult !== null ? (
+                    <div className="text-amber-600 text-sm font-medium">
+                      Values don't match. Adjust your formula.
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground text-sm">
+                      Complete the formula to compare values.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="font-mono text-sm">
+                  Build a complete formula with = sign to see preview
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-sm text-muted-foreground mt-2">
